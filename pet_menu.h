@@ -7,8 +7,9 @@ QT_BEGIN_NAMESPACE
 class QComboBox;
 class QCheckBox;
 class QSlider;
-class QPushButton;
+class QToolButton;
 class QLabel;
+class QPushButton;   // 新增
 QT_END_NAMESPACE
 
 class PetMenu : public QWidget
@@ -26,6 +27,7 @@ signals:
     void addTodoClicked();
     void clearAllTodosClicked();
     void volumeChanged(int value);
+    void citySelected(const QString &cityName);  // 用户确认城市时发射
 
 private slots:
     void onRoleChanged(int index);
@@ -35,15 +37,19 @@ private slots:
     void onAddTodoClicked();
     void onClearAllClicked();
     void onVolumeChanged(int value);
+    void onGoClicked();                          // 新增：点击 Go 按钮
 
 private:
     QComboBox *m_roleCombo;
     QCheckBox *m_timeCheck;
     QCheckBox *m_weatherCheck;
     QCheckBox *m_todosCheck;
-    QPushButton *m_addTodoBtn;
-    QPushButton *m_clearTodosBtn;
+    QToolButton *m_addTodoBtn;
+    QToolButton *m_clearTodosBtn;
     QSlider *m_volumeSlider;
+    QLabel *m_volumeValueLabel;
+    QComboBox *m_cityCombo;      // 用于输入/选择城市
+    QPushButton *m_goBtn;        // 新增：查询按钮
 };
 
 #endif // PET_MENU_H

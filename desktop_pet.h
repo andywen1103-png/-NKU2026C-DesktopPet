@@ -5,17 +5,17 @@
 #include <QTimer>
 #include <QMediaPlayer>
 #include <QAudioOutput>
-#include <QMap>
 #include <QFrame>
-#include <QDateTime>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 QT_BEGIN_NAMESPACE
 class QLabel;
 class QPushButton;
-class QCheckBox;
-class QSlider;
-class QHBoxLayout;
 class QVBoxLayout;
+class QHBoxLayout;
 class QGridLayout;
 QT_END_NAMESPACE
 
@@ -55,6 +55,9 @@ private slots:
     void setVolume(int volume);
     void onMediaStatusChanged(QMediaPlayer::MediaStatus status);
     void checkTodos();
+    void toggleMenu();
+    void onCitySelected(const QString &cityName);
+    void onWeatherReplyFinished(QNetworkReply *reply);
 
 private:
     void setupUI();
@@ -63,15 +66,10 @@ private:
     void setPetImage(const QString &state);
     void showBubbleWithPattern(const QString &pattern);
     void refreshTodoList();
+    void updateWindowSize();
+    void requestWeatherForCity(const QString &cityName);
 
-    // 窗口控制按钮
-    QPushButton *m_minimizeBtn;
-    QPushButton *m_closeBtn;
-
-    // 主容器（用于边框）
     QFrame *m_mainFrame;
-
-    // UI 组件
     QLabel *m_petLabel;
     QLabel *m_timeLabel;
     QLabel *m_weatherLabel;
@@ -81,13 +79,15 @@ private:
     QWidget *m_leftPanel;
     PetMenu *m_menu;
 
-    // 鼠标事件
+    QPushButton *m_minimizeBtn;
+    QPushButton *m_closeBtn;
+    QPushButton *m_toggleMenuBtn;
+
     QPoint m_dragPosition;
     bool m_mousePressed;
     QTimer *m_longPressTimer;
     static const int LONG_PRESS_INTERVAL = 1000;
 
-    // 角色数据
     struct RoleData {
         QString normalImage;
         QString clickImage;
@@ -98,21 +98,19 @@ private:
     QList<RoleData> m_roles;
     int m_currentRoleIndex;
 
-    // 音乐播放
     QMediaPlayer *m_mediaPlayer;
     QAudioOutput *m_audioOutput;
     bool m_musicEnabled;
 
-    // 定时器
     QTimer *m_timeTimer;
     QTimer *m_weatherTimer;
     QTimer *m_todoTimer;
     QTimer *m_resetTimer;
 
-    // 天气模拟
-    QStringList m_weatherConditions;
+    QNetworkAccessManager *m_weatherNetManager;
+    QString m_apiKey;
+    QString m_currentCity;       // 当前城市
 
-    // 待办列表
     QList<TodoItem> m_todos;
     bool m_todosVisible;
 };

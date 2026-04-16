@@ -1,10 +1,8 @@
-﻿#include "desktop_pet.h"
+#include "desktop_pet.h"
 #include "pet_menu.h"
 #include "tododialog.h"
 #include <QLabel>
 #include <QPushButton>
-#include <QCheckBox>
-#include <QSlider>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -19,8 +17,13 @@
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QDebug>
-#include <QRandomGenerator>
 #include <QMessageBox>
+#include <QComboBox>
+#include <QJsonArray>
+#include <QJsonValue>
+#include <QUrl>
+#include <QUrlQuery>
+#include <QNetworkRequest>
 
 DesktopPet::DesktopPet(QWidget *parent)
     : QWidget(parent)
@@ -35,6 +38,7 @@ DesktopPet::DesktopPet(QWidget *parent)
     , m_todoTimer(new QTimer(this))
     , m_resetTimer(new QTimer(this))
     , m_todosVisible(true)
+    , m_currentCity("Beijing")
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
@@ -54,10 +58,15 @@ DesktopPet::DesktopPet(QWidget *parent)
         setPetImage("normal");
     });
 
-    m_weatherConditions = {"☀️ Sunny", "☁️ Cloudy", "🌧 Rainy", "⛈ Thunder", "❄️ Snowy", "🌈 Rainbow"};
-
     connect(m_todoTimer, &QTimer::timeout, this, &DesktopPet::checkTodos);
     m_todoTimer->start(60000);
+
+    m_weatherNetManager = new QNetworkAccessManager(this);
+    connect(m_weatherNetManager, &QNetworkAccessManager::finished,
+            this, &DesktopPet::onWeatherReplyFinished);
+
+    // ⚠️ 请替换为你的 OpenWeatherMap API Key
+    m_apiKey = "7b2b160e0d0939c698c2d43650fbeb79";
 
     loadRoles();
     setupUI();
@@ -68,16 +77,16 @@ DesktopPet::DesktopPet(QWidget *parent)
     updateDateTime();
 
     connect(m_weatherTimer, &QTimer::timeout, this, &DesktopPet::updateWeather);
-    m_weatherTimer->setInterval(60000);
+    m_weatherTimer->setInterval(30 * 60 * 1000);
 
     m_timeLabel->hide();
     m_weatherLabel->hide();
     m_todoTitleLabel->hide();
+
+    requestWeatherForCity(m_currentCity);
 }
 
-DesktopPet::~DesktopPet()
-{
-}
+DesktopPet::~DesktopPet() {}
 
 void DesktopPet::setupUI()
 {
@@ -148,12 +157,18 @@ void DesktopPet::setupUI()
     connect(m_menu, &PetMenu::addTodoClicked, this, &DesktopPet::onAddTodo);
     connect(m_menu, &PetMenu::clearAllTodosClicked, this, &DesktopPet::onClearAllTodos);
     connect(m_menu, &PetMenu::volumeChanged, this, &DesktopPet::setVolume);
+    connect(m_menu, &PetMenu::citySelected, this, &DesktopPet::onCitySelected);
     mainLayout->addWidget(m_menu);
 
     // 右上角按钮
     QVBoxLayout *btnLayout = new QVBoxLayout();
     btnLayout->setSpacing(5);
     btnLayout->setContentsMargins(0, 5, 5, 0);
+
+    m_toggleMenuBtn = new QPushButton("☰", m_mainFrame);
+    m_toggleMenuBtn->setFixedSize(25, 25);
+    m_toggleMenuBtn->setStyleSheet("background: #FFB6C1; border: none; border-radius: 5px; font: bold 12pt; color: white;");
+    connect(m_toggleMenuBtn, &QPushButton::clicked, this, &DesktopPet::toggleMenu);
 
     m_minimizeBtn = new QPushButton("—", m_mainFrame);
     m_closeBtn = new QPushButton("✕", m_mainFrame);
@@ -162,6 +177,7 @@ void DesktopPet::setupUI()
     m_minimizeBtn->setStyleSheet("background: #FFB6C1; border: none; border-radius: 5px; font: bold 12pt; color: white;");
     m_closeBtn->setStyleSheet("background: #FF69B4; border: none; border-radius: 5px; font: bold 12pt; color: white;");
 
+    btnLayout->addWidget(m_toggleMenuBtn);
     btnLayout->addWidget(m_minimizeBtn);
     btnLayout->addWidget(m_closeBtn);
     btnLayout->addStretch();
@@ -185,7 +201,6 @@ void DesktopPet::setupUI()
 
 void DesktopPet::loadRoles()
 {
-    // 请替换为您的实际资源路径
     // 角色0
     RoleData role0;
     role0.normalImage = "C:\\Users\\Andy Wen\\Desktop\\CBigwork\\Pictures\\Role1\\1.png";
@@ -216,8 +231,7 @@ void DesktopPet::loadRoles()
 
 void DesktopPet::setCurrentRole(int index)
 {
-    if (index < 0 || index >= m_roles.size())
-        return;
+    if (index < 0 || index >= m_roles.size()) return;
     m_currentRoleIndex = index;
     setPetImage("normal");
     if (m_musicEnabled) {
@@ -229,18 +243,13 @@ void DesktopPet::setCurrentRole(int index)
 
 void DesktopPet::setPetImage(const QString &state)
 {
-    if (m_currentRoleIndex < 0 || m_currentRoleIndex >= m_roles.size())
-        return;
+    if (m_currentRoleIndex < 0 || m_currentRoleIndex >= m_roles.size()) return;
     QString imagePath;
     const RoleData &role = m_roles[m_currentRoleIndex];
-    if (state == "click")
-        imagePath = role.clickImage;
-    else if (state == "double")
-        imagePath = role.doubleClickImage;
-    else if (state == "long")
-        imagePath = role.longPressImage;
-    else
-        imagePath = role.normalImage;
+    if (state == "click") imagePath = role.clickImage;
+    else if (state == "double") imagePath = role.doubleClickImage;
+    else if (state == "long") imagePath = role.longPressImage;
+    else imagePath = role.normalImage;
 
     QPixmap pix(imagePath);
     if (!pix.isNull()) {
@@ -262,9 +271,7 @@ void DesktopPet::showBubbleWithPattern(const QString &pattern)
     anim->setStartValue(1.0);
     anim->setEndValue(0.0);
     anim->start(QAbstractAnimation::DeleteWhenStopped);
-    QTimer::singleShot(2000, this, [this]() {
-        m_bubbleLabel->hide();
-    });
+    QTimer::singleShot(2000, this, [this]() { m_bubbleLabel->hide(); });
 }
 
 // 鼠标事件
@@ -295,9 +302,7 @@ void DesktopPet::mouseReleaseEvent(QMouseEvent *event)
 void DesktopPet::mouseDoubleClickEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
-        if (m_longPressTimer->isActive()) {
-            m_longPressTimer->stop();
-        }
+        if (m_longPressTimer->isActive()) m_longPressTimer->stop();
         setPetImage("double");
         showBubbleWithPattern("🎉");
         m_resetTimer->start();
@@ -323,60 +328,115 @@ void DesktopPet::onLongPress()
 void DesktopPet::updateDateTime()
 {
     QDateTime now = QDateTime::currentDateTime();
-    QString timeStr = now.toString("yyyy-MM-dd\nhh:mm:ss");
-    m_timeLabel->setText(timeStr);
+    m_timeLabel->setText(now.toString("yyyy-MM-dd\nhh:mm:ss"));
+}
+
+// 天气相关
+void DesktopPet::requestWeatherForCity(const QString &cityName)
+{
+    if (m_apiKey == "YOUR_OPENWEATHERMAP_API_KEY" || m_apiKey.isEmpty()) {
+        m_weatherLabel->setText("❌ 请设置API Key");
+        return;
+    }
+    QUrl url("https://api.openweathermap.org/data/2.5/weather");
+    QUrlQuery query;
+    query.addQueryItem("q", cityName);
+    query.addQueryItem("appid", m_apiKey);
+    query.addQueryItem("units", "metric");
+    query.addQueryItem("lang", "zh_cn");
+    url.setQuery(query);
+    QNetworkRequest request(url);
+    m_weatherNetManager->get(request);
 }
 
 void DesktopPet::updateWeather()
 {
-    int index = QRandomGenerator::global()->bounded(m_weatherConditions.size());
-    QString weather = m_weatherConditions[index];
-    m_weatherLabel->setText(weather);
+    if (!m_currentCity.isEmpty())
+        requestWeatherForCity(m_currentCity);
 }
 
-void DesktopPet::switchRole(int index)
+void DesktopPet::onWeatherReplyFinished(QNetworkReply *reply)
 {
-    setCurrentRole(index);
+    if (reply->error() != QNetworkReply::NoError) {
+        qWarning() << "Weather API error:" << reply->errorString();
+        m_weatherLabel->setText("❌ 网络错误");
+        reply->deleteLater();
+        return;
+    }
+
+    QByteArray data = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (doc.isNull()) {
+        m_weatherLabel->setText("❌ 无效数据");
+        reply->deleteLater();
+        return;
+    }
+
+    QJsonObject obj = doc.object();
+    if (obj.contains("cod") && obj.value("cod").toInt() != 200) {
+        m_weatherLabel->setText("❌ 城市未找到");
+        reply->deleteLater();
+        return;
+    }
+
+    QJsonObject mainObj = obj.value("main").toObject();
+    double temp = mainObj.value("temp").toDouble();
+    int humidity = mainObj.value("humidity").toInt();
+    QJsonArray weatherArray = obj.value("weather").toArray();
+    QString description = weatherArray[0].toObject().value("description").toString();
+    QString iconCode = weatherArray[0].toObject().value("icon").toString();
+
+    QString emoji = "🌡️";
+    if (iconCode.contains("01")) emoji = "☀️";
+    else if (iconCode.contains("02")) emoji = "⛅";
+    else if (iconCode.contains("03") || iconCode.contains("04")) emoji = "☁️";
+    else if (iconCode.contains("09")) emoji = "🌧️";
+    else if (iconCode.contains("10")) emoji = "🌦️";
+    else if (iconCode.contains("11")) emoji = "⛈️";
+    else if (iconCode.contains("13")) emoji = "❄️";
+    else if (iconCode.contains("50")) emoji = "🌫️";
+
+    m_weatherLabel->setText(QString("%1 %2°C %3 湿度%4%")
+                                .arg(emoji).arg(temp, 0, 'f', 1).arg(description).arg(humidity));
+    reply->deleteLater();
 }
 
-void DesktopPet::toggleTimeDisplay(bool checked)
+void DesktopPet::onCitySelected(const QString &cityName)
 {
-    m_timeLabel->setVisible(checked);
+    m_currentCity = cityName;
+    requestWeatherForCity(cityName);
+    if (m_weatherLabel->isVisible()) {
+        m_weatherTimer->start();
+    }
 }
 
+// 菜单信号
+void DesktopPet::switchRole(int index) { setCurrentRole(index); }
+void DesktopPet::toggleTimeDisplay(bool checked) { m_timeLabel->setVisible(checked); }
 void DesktopPet::toggleWeatherDisplay(bool checked)
 {
     m_weatherLabel->setVisible(checked);
     if (checked) {
-        updateWeather();
+        if (!m_currentCity.isEmpty()) requestWeatherForCity(m_currentCity);
         m_weatherTimer->start();
     } else {
         m_weatherTimer->stop();
     }
 }
-
 void DesktopPet::toggleTodosDisplay(bool checked)
 {
     m_todosVisible = checked;
     m_todoTitleLabel->setVisible(checked && !m_todos.isEmpty());
-    for (const TodoItem &item : m_todos) {
-        if (item.displayLabel)
-            item.displayLabel->setVisible(checked);
-    }
+    for (const TodoItem &item : m_todos)
+        if (item.displayLabel) item.displayLabel->setVisible(checked);
 }
-
-void DesktopPet::setVolume(int volume)
-{
-    m_audioOutput->setVolume(volume / 100.0);
-}
-
+void DesktopPet::setVolume(int volume) { m_audioOutput->setVolume(volume / 100.0); }
 void DesktopPet::onMediaStatusChanged(QMediaPlayer::MediaStatus status)
 {
-    if (status == QMediaPlayer::EndOfMedia) {
-        m_mediaPlayer->play();
-    }
+    if (status == QMediaPlayer::EndOfMedia) m_mediaPlayer->play();
 }
 
+// 待办
 void DesktopPet::onAddTodo()
 {
     TodoDialog dlg(this);
@@ -391,13 +451,11 @@ void DesktopPet::onAddTodo()
             QMessageBox::warning(this, "Invalid", "Due time must be in the future.");
             return;
         }
-
         QLabel *label = new QLabel(m_leftPanel);
         label->setStyleSheet("font: 9pt 'Comic Sans MS'; color: #333; padding: 2px;");
         label->setWordWrap(true);
         label->setVisible(m_todosVisible);
         m_todoLayout->addWidget(label);
-
         TodoItem item;
         item.name = name;
         item.dueTime = due;
@@ -423,40 +481,48 @@ void DesktopPet::checkTodos()
 {
     QDateTime now = QDateTime::currentDateTime();
     bool needRefresh = false;
-
     for (int i = m_todos.size() - 1; i >= 0; --i) {
-        TodoItem &item = m_todos[i];
-        if (item.dueTime <= now) {
-            m_todoLayout->removeWidget(item.displayLabel);
-            delete item.displayLabel;
+        if (m_todos[i].dueTime <= now) {
+            m_todoLayout->removeWidget(m_todos[i].displayLabel);
+            delete m_todos[i].displayLabel;
             m_todos.removeAt(i);
             needRefresh = true;
         }
     }
-
     for (TodoItem &item : m_todos) {
         qint64 secsTo = now.secsTo(item.dueTime);
-        if (secsTo <= 86400 && secsTo > 0) {
+        if (secsTo <= 86400 && secsTo > 0)
             item.displayLabel->setStyleSheet("font: 9pt 'Comic Sans MS'; color: red; padding: 2px;");
-        } else {
+        else
             item.displayLabel->setStyleSheet("font: 9pt 'Comic Sans MS'; color: #333; padding: 2px;");
-        }
     }
-
-    if (needRefresh) {
-        refreshTodoList();
-    }
+    if (needRefresh) refreshTodoList();
 }
 
 void DesktopPet::refreshTodoList()
 {
     for (int i = 0; i < m_todos.size(); ++i) {
-        const TodoItem &item = m_todos[i];
-        QString text = QString("%1. %2 (%3)")
-                           .arg(i + 1)
-                           .arg(item.name)
-                           .arg(item.dueTime.toString("MM-dd HH:mm"));
-        item.displayLabel->setText(text);
+        m_todos[i].displayLabel->setText(QString("%1. %2 (%3)")
+                                             .arg(i+1)
+                                             .arg(m_todos[i].name)
+                                             .arg(m_todos[i].dueTime.toString("MM-dd HH:mm")));
     }
     m_todoTitleLabel->setVisible(m_todosVisible && !m_todos.isEmpty());
+}
+
+// 菜单收起/展开
+void DesktopPet::toggleMenu()
+{
+    bool visible = m_menu->isVisible();
+    m_menu->setVisible(!visible);
+    updateWindowSize();
+}
+
+void DesktopPet::updateWindowSize()
+{
+    m_mainFrame->adjustSize();
+    QPoint pos = this->pos();
+    setFixedSize(m_mainFrame->sizeHint());
+    m_mainFrame->setGeometry(0, 0, width(), height());
+    if (pos != this->pos()) move(pos);
 }
