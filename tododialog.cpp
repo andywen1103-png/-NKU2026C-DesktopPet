@@ -12,38 +12,24 @@ TodoDialog::TodoDialog(QWidget *parent)
     setWindowTitle("Add New Todo");
     setModal(true);
     setFixedSize(300, 150);
-
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-
-    QLabel *nameLabel = new QLabel("Todo Name:", this);
+    mainLayout->addWidget(new QLabel("Todo Name:"));
     m_nameEdit = new QLineEdit(this);
-    mainLayout->addWidget(nameLabel);
     mainLayout->addWidget(m_nameEdit);
-
-    QLabel *timeLabel = new QLabel("Due Time:", this);
+    mainLayout->addWidget(new QLabel("Due Time:"));
     m_dateTimeEdit = new QDateTimeEdit(QDateTime::currentDateTime(), this);
     m_dateTimeEdit->setDisplayFormat("yyyy-MM-dd HH:mm");
     m_dateTimeEdit->setCalendarPopup(true);
-    mainLayout->addWidget(timeLabel);
     mainLayout->addWidget(m_dateTimeEdit);
-
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    QHBoxLayout *btnLayout = new QHBoxLayout();
     m_okButton = new QPushButton("OK", this);
     m_cancelButton = new QPushButton("Cancel", this);
-    buttonLayout->addWidget(m_okButton);
-    buttonLayout->addWidget(m_cancelButton);
-    mainLayout->addLayout(buttonLayout);
-
+    btnLayout->addWidget(m_okButton);
+    btnLayout->addWidget(m_cancelButton);
+    mainLayout->addLayout(btnLayout);
     connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
 }
 
-QString TodoDialog::getTodoName() const
-{
-    return m_nameEdit->text();
-}
-
-QDateTime TodoDialog::getDueDateTime() const
-{
-    return m_dateTimeEdit->dateTime();
-}
+QString TodoDialog::getTodoName() const { return m_nameEdit->text(); }
+QDateTime TodoDialog::getDueDateTime() const { return m_dateTimeEdit->dateTime(); }

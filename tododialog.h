@@ -4,11 +4,9 @@
 #include <QDialog>
 #include <QDateTime>
 
-QT_BEGIN_NAMESPACE
 class QLineEdit;
 class QDateTimeEdit;
 class QPushButton;
-QT_END_NAMESPACE
 
 class TodoDialog : public QDialog
 {
